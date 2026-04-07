@@ -1,0 +1,11 @@
+.git/
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.log
+.env
+artifacts/
+tests/
+uv.lock
+migrated_from_cicd-debugger-env-2/

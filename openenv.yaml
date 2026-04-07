@@ -1,0 +1,72 @@
+version: "0.2"
+name: "cicd-debugger-env"
+description: "RL environment for CI/CD debugging with deterministic, hidden, and quality-aware scoring"
+metadata:
+  domain: "devops"
+  real_world_task: "ci-cd pipeline debugging"
+  deployment: "huggingface-space-docker"
+
+environment:
+  entry_point: "env.environment:CICDDebuggerEnvironment"
+
+interface:
+  observation_type: "json"
+  action_type: "text"
+  max_steps: 30
+
+action_space:
+  tools:
+    - read_file
+    - read_logs
+    - analyze_error
+    - edit_config
+    - run_pipeline_stage
+    - run_tests
+    - validate_fix
+    - submit_solution
+
+tasks:
+  - id: "easy-command-typo"
+    difficulty: "easy"
+    failure_stage: "test"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "easy-missing-checkout"
+    difficulty: "easy"
+    failure_stage: "build"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "easy-yaml-indentation"
+    difficulty: "easy"
+    failure_stage: "build"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "medium-python-version"
+    difficulty: "medium"
+    failure_stage: "build"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "medium-cache-key"
+    difficulty: "medium"
+    failure_stage: "test"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "medium-artifact-permissions"
+    difficulty: "medium"
+    failure_stage: "deploy"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "hard-matrix-logic"
+    difficulty: "hard"
+    failure_stage: "test"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "hard-conditional-deploy"
+    difficulty: "hard"
+    failure_stage: "deploy"
+    grader: "env.graders.deterministic:DeterministicGrader"
+
+  - id: "hard-needs-order"
+    difficulty: "hard"
+    failure_stage: "deploy"
+    grader: "env.graders.deterministic:DeterministicGrader"

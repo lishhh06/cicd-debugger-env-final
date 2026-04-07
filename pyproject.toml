@@ -1,0 +1,21 @@
+[project]
+name = "cicd-debugger-env"
+version = "0.1.0"
+description = "OpenEnv CI/CD pipeline debugging environment with hybrid grading and reward shaping"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pyyaml",
+  "fastapi",
+  "uvicorn",
+  "openenv-core",
+  "openai",
+]
+
+[project.scripts]
+server = "server.app:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
