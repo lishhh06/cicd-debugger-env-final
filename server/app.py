@@ -5,8 +5,7 @@ from dataclasses import dataclass
 import os
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -150,17 +149,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/reset", response_model=StepResponse)
-async def reset(payload: ResetRequest | None = None) -> StepResponse:
+@app.post("/reset")
+async def reset(request: Request) -> StepResponse:
     global runtime_session
 
-    request = payload or ResetRequest()
-    env = CICDDebuggerEnvironment(max_steps=int(request.max_steps))
-    observation = await env.reset(task_id=request.task_id, difficulty=request.difficulty)
+    # Parse request body if present, otherwise use defaults
+    try:
+        body = await request.json()
+        task_id = body.get("task_id")
+        difficulty = body.get("difficulty")
+        max_steps = body.get("max_steps", MAX_STEPS)
+    except:
+        task_id = None
+        difficulty = None
+        max_steps = MAX_STEPS
+
+    env = CICDDebuggerEnvironment(max_steps=int(max_steps))
+    observation = await env.reset(task_id=task_id, difficulty=difficulty)
 
     runtime_session = RuntimeSession(
         env=env,
-        task_id=str(observation.get("task_id", request.task_id or "cicd-debugger-task")),
+        task_id=str(observation.get("task_id", task_id or "cicd-debugger-task")),
         step_count=0,
         done=False,
         last_action=None,

@@ -59,7 +59,7 @@ class RewardCalculator:
         original_config = original_config or result.get("original_config") or state.get("original_config") or ""
         error_message = error_message or result.get("error") or state.get("error") or ""
 
-        reward = 0.0
+        reward = 0.05
         reward += self._progress_reward(action, result)
         reward += self._execution_reward(result)
         reward += self._quality_reward(
@@ -88,7 +88,7 @@ class RewardCalculator:
         return reward
 
     def _execution_reward(self, result: dict[str, Any]) -> float:
-        reward = 0.0
+        reward = 0.05
 
         if result.get("pipeline_run"):
             reward += 0.10
@@ -110,11 +110,17 @@ class RewardCalculator:
         metadata: dict[str, Any],
     ) -> float:
         if not current_config or not expected_config:
-            return 0.0
+            return 0.05
 
         deterministic_score = result.get("deterministic_score")
         if deterministic_score is None:
             deterministic_score = self.deterministic_grader.grade(current_config, expected_config, metadata)
+
+        if isinstance(deterministic_score, dict):
+            deterministic_score = deterministic_score.get("score", 0.05)
+
+        if not isinstance(deterministic_score, (int, float)):
+            deterministic_score = 0.05
 
         hidden_pass_rate = result.get("hidden_test_pass_rate")
         if hidden_pass_rate is None and action in {"validate_fix", "submit_solution"}:
@@ -124,7 +130,13 @@ class RewardCalculator:
                 metadata=metadata,
             )
 
-        llm_average = 0.0
+        if isinstance(hidden_pass_rate, dict):
+            hidden_pass_rate = hidden_pass_rate.get("score", 0.05)
+
+        if not isinstance(hidden_pass_rate, (int, float)):
+            hidden_pass_rate = 0.05
+
+        llm_average = 0.05
         judge_scores = result.get("judge_scores")
         if not judge_scores and self.llm_judge and original_config and current_config:
             try:
@@ -138,7 +150,7 @@ class RewardCalculator:
             quality = self._clamp_01(judge_scores.get("quality", 0.0))
             llm_average = (correctness + minimalism + quality) / 3.0
 
-        quality_reward = 0.0
+        quality_reward = 0.05
         quality_reward += self.QUALITY_WEIGHTS["deterministic"] * self._clamp_01(deterministic_score)
         quality_reward += self.QUALITY_WEIGHTS["hidden"] * self._clamp_01(hidden_pass_rate or 0.0)
         quality_reward += self.QUALITY_WEIGHTS["llm"] * self._clamp_01(llm_average)
@@ -176,5 +188,5 @@ class RewardCalculator:
         try:
             parsed = float(value)
         except (TypeError, ValueError):
-            parsed = 0.0
-        return max(0.0, min(1.0, parsed))
+            parsed = 0.05
+        return max(0.01, min(0.99, parsed))

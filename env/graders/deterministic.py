@@ -36,10 +36,15 @@ class DeterministicGrader:
              current_config.strip() == expected_config.strip()
         )
 
+       # ensure strictly between 0 and 1
+        epsilon = 0.01
+
+        safe_score = max(epsilon, min(score, 0.99))
+
         return {
-            "reward": float(score),
-            "is_valid": bool(is_valid),
-    }
+             "reward": float(safe_score),
+             "is_valid": bool(is_valid),
+            }
 
     def _compute_score(self, current_config, expected_config, metadata=None):
     
@@ -60,13 +65,13 @@ class DeterministicGrader:
 
     def _syntax_score(self, config_text: str) -> float:
         if not (config_text or "").strip():
-            return 0.0
+            return 0.05
 
         try:
             yaml.safe_load(config_text)
-            return 1.0
+            return 0.95
         except yaml.YAMLError:
-            return 0.0
+            return 0.05
 
     def _functional_score(self, current_config: str, expected_config: str, metadata: dict[str, Any]) -> float:
         expected_commands = self._extract_commands(expected_config)
@@ -93,15 +98,15 @@ class DeterministicGrader:
         current_normalized = self._normalize_text(current_config)
 
         if not broken_token and not fixed_token:
-            return 1.0
+            return 0.95
 
         if broken_token and broken_token in current_normalized:
-            return 0.0
+            return 0.05
 
         if fixed_token and fixed_token not in current_normalized:
-            return 0.0
+            return 0.05
 
-        return 1.0
+        return 0.95
 
     def _extract_commands(self, config_text: str) -> list[str]:
         commands: list[str] = []
@@ -190,9 +195,9 @@ class DeterministicGrader:
         right = self._normalize_text(expected_config)
 
         if not left and not right:
-            return 1.0
+            return 0.95
         if not left or not right:
-            return 0.0
+            return 0.05
 
         return self._clamp_01(SequenceMatcher(None, left, right).ratio())
 
@@ -200,4 +205,4 @@ class DeterministicGrader:
         return re.sub(r"\s+", " ", (value or "")).strip().lower()
 
     def _clamp_01(self, value: float) -> float:
-        return max(0.0, min(1.0, float(value)))
+        return max(0.01, min(0.99, float(value)))

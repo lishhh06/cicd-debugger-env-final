@@ -1,6 +1,21 @@
 from __future__ import annotations
 
+import re
+
 from env.tasks.task_types import CICDTask
+
+
+def _create_deterministic_grader(expected_config: str):
+    """Factory function to create a deterministic grader for YAML config comparisons."""
+    def grader(current: str, expected: str, metadata: dict = None) -> float:
+        normalized_current = re.sub(r"\s+", " ", current.strip().lower())
+        normalized_expected = re.sub(r"\s+", " ", expected.strip().lower())
+        if normalized_current == normalized_expected:
+            return 0.95
+        elif normalized_current in normalized_expected or normalized_expected in normalized_current:
+            return 0.75
+        return 0.05
+    return grader
 
 
 MEDIUM_TASKS: list[CICDTask] = [
@@ -42,6 +57,20 @@ jobs:
         error_message="python interpreter version mismatch",
         actual_bug="workflow pins python-version 3.8 while project requires 3.11",
         metadata={"broken_token": 'python-version: "3.8"', "fixed_token": 'python-version: "3.11"'},
+        deterministic_grader=_create_deterministic_grader("""
+name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+""".strip()),
     ),
     CICDTask(
         task_id="medium-cache-key",
@@ -89,6 +118,24 @@ jobs:
         error_message="cache key misses lockfile fingerprint",
         actual_bug="cache key is too broad and never invalidates on dependency changes",
         metadata={"broken_token": "key: node-modules-${{ runner.os }}", "fixed_token": "hashFiles('**/package-lock.json')"},
+        deterministic_grader=_create_deterministic_grader("""
+name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: node-modules-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
+      - run: npm ci
+      - run: npm test
+""".strip()),
     ),
     CICDTask(
         task_id="medium-artifact-permissions",
@@ -135,5 +182,23 @@ jobs:
         error_message="insufficient permissions for upload-artifact",
         actual_bug="actions:write permission missing from workflow permissions",
         metadata={"broken_token": "permissions:\n  contents: read", "fixed_token": "actions: write"},
+        deterministic_grader=_create_deterministic_grader("""
+name: CI
+on: [push]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: dist/
+""".strip()),
     ),
 ]

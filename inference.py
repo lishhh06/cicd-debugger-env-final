@@ -226,9 +226,9 @@ async def run_episode(args: argparse.Namespace) -> int:
     except Exception as exc:
         success = False
         if not metrics.rewards:
-            metrics.add_step(action="system_error", reward=0.0, error=str(exc), done=True)
+            metrics.add_step(action="system_error", reward=0.05, error=str(exc), done=True)
     finally:
-        score = max(0.0, min(1.0, float(metrics.average_reward)))
+        score = max(0.01, min(0.99, float(metrics.average_reward)))
         success = episode_completed_cleanly and score >= SUCCESS_SCORE_THRESHOLD
 
         try:

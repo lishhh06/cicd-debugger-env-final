@@ -94,7 +94,7 @@ class LLMJudge:
     def _extract_score(self, text: str, key: str) -> float:
         match = re.search(rf"{key}\s*[:=\-]\s*([0-9]*\.?[0-9]+)", text, flags=re.IGNORECASE)
         if not match:
-            return 0.0
+            return 0.05
         return self._clamp(match.group(1))
 
     def _normalize_partial_scores(self, obj: dict[str, Any]) -> dict[str, float]:
@@ -108,5 +108,5 @@ class LLMJudge:
         try:
             parsed = float(value)
         except (TypeError, ValueError):
-            parsed = 0.0
-        return max(0.0, min(1.0, parsed))
+            parsed = 0.05
+        return max(0.01, min(0.99, parsed))

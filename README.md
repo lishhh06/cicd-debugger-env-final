@@ -1,4 +1,5 @@
 ---
+
 title: CICD_DEBUGGER
 colorFrom: blue
 colorTo: green
@@ -6,377 +7,244 @@ sdk: docker
 app_port: 7860
 pinned: false
 tags:
-  - openenv
+
+* openenv
+
 ---
 
 # CI/CD Pipeline Debugger Environment (OpenEnv)
 
-## 1. Project Goal
+This project models CI/CD debugging as a reinforcement learning problem where an agent iteratively fixes pipeline failures.
 
-This repository implements an AI training and evaluation environment where an agent learns to debug broken CI/CD pipelines automatically.
+---
 
-The environment targets real-world DevOps failure patterns, including:
+## 1. Overview
 
-- YAML syntax and structure issues
-- Incorrect build/test commands (for example, npm tset -> npm test)
-- Dependency and setup failures
-- Multi-stage pipeline execution errors
+The environment simulates common CI/CD failures including:
 
-This is designed as an RL-style interaction loop:
+* invalid commands
+* version mismatches
+* pipeline execution errors
 
-Observe -> Think -> Act -> Get Reward -> Repeat
+An agent interacts with the system using a structured loop:
 
-## 2. Why This Matters
+Observe → Act → Receive Reward → Repeat
 
-CI/CD failures are common, repetitive, and often multi-step to resolve. This project turns that workflow into a structured learning environment where agents:
+---
 
-- Read failure context
-- Reason about root causes
-- Propose and apply fixes
-- Get shaped rewards for robust behavior
+## 2. Environment Design
 
-## 3. System Architecture
+The environment follows the OpenEnv interface:
 
-High-level flow:
+* `reset()` → returns initial observation
+* `step(action)` → returns `(observation, reward, done, info)`
+* `state()` → returns current environment state
 
-Agent (LLM) -> Action -> Environment.step() -> Reward/Evaluation -> Next step
+Typed schemas are defined in `env/models.py`.
 
-Core integration path:
+---
 
-Model -> Action -> Environment.step() -> RewardCalculator
+## 3. Action Space
 
-RewardCalculator integrates:
+Supported actions:
 
-- DeterministicGrader
-- LLMJudge
-- HiddenTestRunner
-- AntiHackingDetector
+* READ_FILE
+* READ_LOGS
+* ANALYZE_ERROR
+* EDIT_CONFIG
+* RUN_STAGE
+* VALIDATE
+* SUBMIT
 
-### 3.1 OpenEnv Interface (Typed)
+Each action accepts a structured payload.
 
-Typed Pydantic models are defined in `env/models.py`:
+---
 
-- `Observation`: strict schema for environment observations
-- `Action`: normalized tool + payload action schema
-- `Reward`: bounded reward model with components
+## 4. Observation
 
-Environment contract:
+Each observation includes:
 
-- `reset()` returns the initial `Observation` payload
-- `step(action)` returns `(observation, reward, done, info)`
-- `state()` returns current environment state snapshot
+* pipeline configuration
+* logs and error messages
+* current stage
+* task-specific metadata
 
-Server/API contract models are exposed in `server/app.py` and use the same typed observation/action/reward structures.
+---
 
-### 3.2 Action and Observation Spaces
+## 5. Tasks
 
-Observation fields include:
+The environment includes 13 tasks:
 
-- `task_id`, `difficulty`, `failure_stage`, `actual_bug`
-- `config`, `logs`, `error_message`
-- `available_tools`, `progress_flags`
-- `file_modification_count`, `hidden_test_pass_rate`, `step_count`, `last_action_error`
+* Easy: command and syntax issues
+* Medium: dependency and version issues
+* Hard: multi-stage pipeline logic
 
-Action schema:
+Each task is designed such that:
 
-- `tool`: one of `read_file`, `read_logs`, `analyze_error`, `edit_config`, `run_pipeline_stage`, `run_tests`, `validate_fix`, `submit_solution`
-- `payload`: optional dict (for example `{ "raw": "replace npm tset with npm test" }`)
+* it fails under the initial configuration
+* it passes after applying the correct fix
 
-Reward schema:
+---
 
-- `value`: bounded float in `[0.0, 1.0]`
-- `components`: reward breakdown dictionary
+## 6. Evaluation and Reward
 
-## 4. Core Modules
+Reward is computed as:
 
-### 4.1 Quality Judge
+* `1.0` → correct fix
+* `0.0` → incorrect fix
 
-- File: env/graders/llm_judge.py
-- Purpose: quality-aware scoring of fixes
-- Output keys: correctness, minimalism, quality (all in [0,1])
-- Guarantees:
-	- strict JSON parsing attempt
-	- robust fallback parsing for messy output
-	- no-crash behavior (safe zero scores on failure)
+Optional shaping:
 
-### 4.2 Deterministic Grader
+* partial reward for progress
+* penalties for invalid or premature actions
 
-- File: env/graders/deterministic.py
-- Purpose: reproducible correctness scoring (0-1)
-- Checks:
-	- YAML validity
-	- command and fix correctness
-	- similarity and issue resolution
-- Rules:
-	- deterministic only
-	- same input, same score
+Tool-specific bonuses:
 
-### 4.3 Anti-Hacking Detector
+* `+0.05` → read_logs
+* `+0.1` → analyze_error
+* `+0.2` → edit_config
+* `+0.2` → run_pipeline_stage
+* `-0.3` → premature validation (no pipeline executed)
+* `-0.2` → invalid tool
 
-- File: env/anti_hacking.py
-- Purpose: detect reward-hacking and shortcut behavior
-- Penalty detectors:
-	- stage skipping (if: false, when: never)
-	- fake success (echo tests passed, unsafe exit 0 patterns)
-	- pipeline breakage between versions
-	- excessive edits
-	- timeout abuse via too many steps
+All rewards are clamped to `[0.0, 1.0]`.
 
-### 4.4 Hidden Tests
+Evaluation is deterministic and reproducible.
 
-- File: env/hidden_tests.py
-- Purpose: test fix robustness, not just exact-match overfitting
-- Method:
-	- deterministic variant generation (OS, versions, env shifts)
-	- evaluate pass rate across variants
+---
 
-### 4.5 Reward Shaping
+## 7. Example Task
 
-- File: env/rewards.py
-- Purpose: step-level learning signal
-- Components:
-	- progress rewards (logs, analysis, fix proposal)
-	- execution rewards (pipeline run, tests pass)
-	- quality rewards (deterministic + hidden tests + LLM judge)
-	- anti-hacking penalties
+Initial:
 
-## 5. Inference and Evaluation
+* Command: `npm tset`
+* Expected: `npm test`
 
-### 5.1 Prompt and Model Layers
+Failure:
 
-- inference/prompts.py: stable prompt templates and fallback action heuristics
-- inference/model_wrapper.py: OpenAI client action generation, candidate generation, and safe fallback
+* Build fails due to invalid command
 
-Canonical action tools used by environment and inference:
+Fix:
 
-- read_file
-- read_logs
-- analyze_error
-- edit_config
-- run_pipeline_stage
-- run_tests
-- validate_fix
-- submit_solution
+* Replace `tset` → `test`
 
-### 5.2 Metrics and Artifacts
+---
 
-- inference/metrics.py: reward, success-rate, and failure reason tracking
-- inference/visualize.py: reward curve and metrics artifact export
+## 8. Example Run
 
-### 5.3 Submission-Critical Runtime
+```
+[START]
+[STEP] action=READ_LOGS reward=0.00
+[STEP] action=EDIT_CONFIG reward=0.00
+[STEP] action=VALIDATE reward=1.00
+[END] success=true
+```
 
-- File: inference.py (root)
-- Responsibilities:
-	- initialize model and environment
-	- run step loop
-	- calculate rewards
-	- emit strict stdout contract
-	- always emit END line
+---
 
-Required output format:
+## 9. Inference
 
-- [START] task=... env=... model=...
-- [STEP] step=<n> action=... reward=0.00 done=<true|false> error=<msg|null>
-- [END] success=<true|false> steps=<n> score=<0.000> rewards=<r1,r2,...>
+The inference loop:
 
-Rules enforced:
+* queries a model for actions
+* executes actions via `env.step()`
+* logs output in a fixed format
 
-- single-line logs only
-- reward values with 2 decimals
-- lowercase booleans
-- no extra runtime log noise
+Output format:
 
-## 6. Task Coverage
+* `[START]`
+* `[STEP]`
+* `[END]`
 
-The project includes 9 CI-fix tasks spanning:
+---
 
-- easy: syntax and typo fixes
-- medium: dependency/env/cache/permissions issues
-- hard: matrix logic, conditional flow, orchestration-level failures
+## 10. API (HuggingFace Space)
 
-Representative baseline tasks (one per difficulty):
+The environment is exposed via FastAPI.
 
-- easy: `easy-command-typo` (fix invalid `npm tset` command)
-- medium: `medium-python-version` (align workflow Python version)
-- hard: `hard-needs-order` (repair deploy job dependency ordering)
+Endpoints:
 
-## 7. Setup
+* `GET /`
+* `GET /health`
+* `POST /reset`
+* `POST /step`
+* `GET /state`
+
+---
+
+## 11. Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 Environment variables:
 
 ```bash
-export API_BASE_URL="https://router.huggingface.co/v1"
-export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-export HF_TOKEN="<your_openai_compatible_api_key>"
-# Optional alias; if set, this takes precedence over HF_TOKEN in inference.py
-export OPENAI_API_KEY="<same_token_optional>"
-# Optional, only if your inference spins environments from local images.
-export LOCAL_IMAGE_NAME="<local_env_image_name>"
+API_BASE_URL=https://router.huggingface.co/v1
+MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
+HF_TOKEN=<your_token>
 ```
 
-If you want to use an OpenAI access token directly:
+---
+
+## 12. Run
 
 ```bash
-export API_BASE_URL="https://api.openai.com/v1"
-export MODEL_NAME="gpt-4o-mini"
-export HF_TOKEN="<your_openai_access_token>"
-# Optional alias:
-export OPENAI_API_KEY="<same_token_optional>"
+python inference.py
 ```
 
-## 8. Run Inference
+---
 
-Offline/local mode:
+## 13. Docker
 
 ```bash
-python inference.py --offline --force-local-env --max-steps 8 --policy-mode imp --trajectories 4
+docker build -t cicd-debugger-env .
+docker run -e HF_TOKEN=<your_token> cicd-debugger-env
 ```
 
-Model-backed mode:
+---
 
-```bash
-python inference.py --max-steps 8 --policy-mode imp --trajectories 4
-```
-
-Run baseline across easy/medium/hard tasks:
-
-OpenAI client mode:
-
-```bash
-OPENAI_API_KEY="<your_openai_compatible_api_key>" python baseline_inference.py --max-steps 5 --policy-mode imp --trajectories 3 --force-local-env
-```
-
-Offline reproducible mode:
-
-```bash
-python baseline_inference.py --max-steps 5 --policy-mode imp --trajectories 3 --offline --force-local-env
-```
-
-Policy modes:
-
-- sft: deterministic heuristic policy
-- direct: single model action per step
-- imp: multi-candidate generation and ranking
-
-## 9. Baseline Scores
-
-Reproducible baseline artifact:
-
-- `artifacts/baseline_scores.json`
-
-Latest baseline run (`max_steps=5`, `policy_mode=imp`, `trajectories=3`):
-
-| Task ID | Difficulty | Score | Success |
-|---|---|---:|---:|
-| easy-command-typo | easy | 0.541 | false |
-| medium-python-version | medium | 0.679 | false |
-| hard-needs-order | hard | 0.513 | false |
-
-Aggregate:
-
-- average score: `0.578`
-- success rate: `0.000`
-
-When `OPENAI_API_KEY` is provided, the same script runs with the OpenAI API client path in `inference.py`.
-
-## 10. Tests
-
-Run all tests:
+## 14. Testing
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Coverage includes:
+---
 
-- LLM judge
-- deterministic grader
-- anti-hacking detectors
-- hidden tests
-- reward system
-- end-to-end inference output format
-
-## 11. Validation and Submission
-
-OpenEnv validation:
+## 15. Validation
 
 ```bash
 python -m openenv.cli.__main__ validate
 ```
 
-Pre-submission script:
+---
 
-```bash
-./validate-submission.sh <your_hf_space_url>
-```
+## 16. OpenEnv Compliance
 
-Required environment variables:
+Implements:
 
-```bash
-export API_BASE_URL="https://router.huggingface.co/v1"
-export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-export OPENAI_API_KEY="<your_openai_compatible_api_key>"
-# Optional fallback:
-export HF_TOKEN="<your_token>"
-```
+* `reset()`
+* `step()`
+* `state()`
 
-Docker run (Space/API mode):
+Uses:
 
-```bash
-docker build -t cicd-debugger-env .
-docker run --rm -p 7860:7860 cicd-debugger-env
-```
+* structured observation/action/reward
+* deterministic evaluation
+* containerized execution
 
-Server endpoints used by validators:
+---
 
-- `POST /reset`
-- `POST /step`
-- `GET /state`
-- `GET /health`
+## 17. Success Criteria
 
-## 12. Deploy to Hugging Face Space (OpenAI Token)
+* pipeline passes after fix
+* reward = 1.0
+* results are deterministic across runs
 
-This repository is already configured for Docker Spaces (`sdk: docker` in this README front matter).
+---
 
-1. Create a new Hugging Face Space with SDK set to `Docker`.
-2. Push this repository to the Space git remote.
-3. In Space Settings -> Variables and secrets, add these Secrets:
+## 18. Summary
 
-```text
-OPENAI_API_KEY=<your_openai_access_token>
-API_BASE_URL=https://api.openai.com/v1
-MODEL_NAME=gpt-4o-mini
-```
-
-4. Optional Secrets:
-
-```text
-HF_TOKEN=<optional_fallback_token>
-OFFLINE_INFERENCE=0
-MAX_STEPS=8
-TEMPERATURE=0.2
-MAX_TOKENS=120
-```
-
-5. Keep the app port as `7860` (already configured).
-6. Wait for build completion, then verify:
-
-```bash
-curl -sS https://<your-space-name>.hf.space/health
-curl -sS -X POST https://<your-space-name>.hf.space/reset -H 'Content-Type: application/json' -d '{}'
-```
-
-Notes:
-
-- `.env.example` is for local development reference only. Hugging Face Spaces use Secrets/Variables from Space Settings.
-- Runtime code reads `OPENAI_API_KEY` first and falls back to `HF_TOKEN` when `OPENAI_API_KEY` is not provided.
-
-## 13. One-line Presentation Summary
-
-We built an OpenEnv-compliant reinforcement learning environment where AI agents learn to debug real CI/CD pipelines using multi-step reasoning, hybrid grading, anti-hacking safeguards, and robust reward shaping.
+This repository provides a reproducible environment for training and evaluating agents on CI/CD debugging tasks using structured interaction and deterministic evaluation.

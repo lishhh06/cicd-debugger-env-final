@@ -36,7 +36,7 @@ class HiddenTestRunner:
         expected = expected_config or str(task.get("expected_config", ""))
 
         if not fixed_config.strip() or not expected.strip():
-            return 0.0
+            return 0.05
 
         total = 0
         passed = 0
@@ -45,14 +45,22 @@ class HiddenTestRunner:
             fixed_variant = self._apply_replacements(fixed_config, replacements)
             expected_variant = self._apply_replacements(expected, replacements)
             score = self.grader.grade(fixed_variant, expected_variant, metadata)
+
+            if isinstance(score, dict):
+                score = score.get("score", 0.0)
+
+            if not isinstance(score, (int, float)):
+                score = 0.0
+
             total += 1
             if score >= self.pass_threshold:
                 passed += 1
 
         if total == 0:
-            return 0.0
+            return 0.05
 
-        return round(passed / total, 4)
+        result = round(passed / total, 4)
+        return max(0.01, min(0.99, result))
 
     def _variant_replacement_sets(self) -> list[tuple[tuple[str, str], ...]]:
         return [

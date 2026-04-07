@@ -13,6 +13,64 @@ interface:
   observation_type: "json"
   action_type: "text"
   max_steps: 30
+  reward_range: [0.0, 1.0]
+
+observation_schema:
+  type: object
+  properties:
+    task_id:
+      type: string
+    difficulty:
+      type: string
+    failure_stage:
+      type: string
+    actual_bug:
+      type: string
+    config:
+      type: string
+    logs:
+      type: string
+    error_message:
+      type: string
+    available_tools:
+      type: array
+      items:
+        type: string
+    progress_flags:
+      type: object
+    file_modification_count:
+      type: integer
+    hidden_test_pass_rate:
+      type: number
+    step_count:
+      type: integer
+    last_action_error:
+      type: string
+  required:
+    - task_id
+    - difficulty
+    - failure_stage
+    - actual_bug
+    - config
+    - logs
+    - error_message
+    - available_tools
+    - progress_flags
+    - file_modification_count
+    - hidden_test_pass_rate
+    - step_count
+    - last_action_error
+
+action_schema:
+  type: object
+  properties:
+    tool:
+      type: string
+      enum: ["read_file", "read_logs", "analyze_error", "edit_config", "run_pipeline_stage", "run_tests", "validate_fix", "submit_solution"]
+    payload:
+      type: object
+  required:
+    - tool
 
 action_space:
   tools:

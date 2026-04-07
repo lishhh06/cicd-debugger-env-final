@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass(frozen=True)
@@ -19,3 +19,5 @@ class CICDTask:
     error_message: str
     actual_bug: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    deterministic_grader: Callable | None = None
+    llm_grader: Callable | None = None
